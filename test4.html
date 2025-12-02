@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+    <title>Wide Area Force Logger (Fixed)</title>
+    <style>
+        /* 화면 꽉 채우기 설정 */
+        html, body {
+            height: 100%; margin: 0; padding: 0; overflow: hidden;
+            background-color: #f0f2f5;
+            font-family: -apple-system, BlinkMacSystemFont, "Roboto", sans-serif;
+            text-align: center; color: #333;
+            user-select: none; -webkit-touch-callout: none;
+        }
+
+        .container {
+            display: flex; flex-direction: column; height: 100%; padding: 10px; box-sizing: border-box;
+        }
+        
+        /* 상단: 값 표시 */
+        .top-panel {
+            flex: 0 0 auto; background: white; padding: 15px; border-radius: 20px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1); margin-bottom: 10px;
+        }
+        #current-force {
+            font-size: 4em; font-weight: 900; color: #222; margin: 0; line-height: 1;
+            font-variant-numeric: tabular-nums;
+        }
+        .status-text { font-size: 0.9em; color: #666; margin-top: 5px; display: flex; justify-content: space-between; padding: 0 10px;}
+
+        /* 중단: 터치 영역 (최대화) */
+        #touch-area {
+            flex: 1; width: 100%;
+            background-color: #e9ecef; border-radius: 15px;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            font-size: 1.5em; font-weight: bold; color: #868e96;
+            border: 4px dashed #adb5bd; margin-bottom: 10px;
+            touch-action: none; transition: background-color 0.1s;
+        }
+        #touch-area.active { 
+            background-color: #ffc9c9 !important; border-color: #ff6b6b !important; color: #c92a2a !important; 
+        }
+
+        /* 하단: 컨트롤 패널 */
+        .bottom-panel {
+            flex: 0 0 auto; background: white; padding: 10px; border-radius: 15px; font-size: 0.9em;
+        }
+        .control-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+        input[type=number] { padding: 8px; width: 60px; text-align: center; border: 1px solid #ddd; border-radius: 5px; font-size: 16px; }
+        
+        button { border: none; border-radius: 8px; padding: 10px; font-weight: bold; font-size: 14px; cursor: pointer; width: 100%; }
+        .btn-calib { background-color: #20c997; color: white; width: auto; flex-grow: 1; margin-left: 5px; }
+        .btn-download { background-color: #339af0; color: white; margin-top: 5px; padding: 12px; font-size: 16px; }
+        button:disabled { background-color: #dee2e6; color: #adb5bd; }
+        
+        #drag-status.warning { color: red; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="top-panel">
+        <div class="status-text">
+            <span>Force (N)</span>
+            <span id="drag-status">대기중</span>
+        </div>
+        <h1 id="current-force">0.000</h1>
+    </div>
+
+    <div id="touch-area">
+        <div style="font-size: 2rem;">👇</div>
+        <div style="margin-top:10px;">이 영역 전체가<br>저울입니다</div>
+    </div>
+
+    <div class="bottom-panel">
+        <div class="control-row" style="background: #f8f9fa; padding: 8px; border-radius: 8px;">
+            <div style="font-weight:bold; margin-right:5px;">⚖️ 보정:</div>
+            <input type="number" id="calib-weight" placeholder="g">
+            <span style="margin: 0 5px;">g</span>
+            <button class="btn-calib" onclick="calibrate()">설정 적용</button>
+        </div>
+        <div id="calib-msg" style="font-size: 0.8em; color: green; margin-bottom: 5px;"></div>
+
+        <div style="font-size: 0.8em; color: #555; margin-bottom: 2px;" id="log-count">데이터: 0건</div>
+        <button id="download-btn" class="btn-download" disabled>📥 엑셀(CSV) 저장</button>
+    </div>
+</div>
+
+<script>
+    // === 전역 변수 ===
+    const touchArea = document.getElementById('touch-area');
+    const forceDisplay = document.getElementById('current-force');
+    const dragStatusDisplay = document.getElementById('drag-status');
+    const logCountDisplay = document.getElementById('log-count');
+    const downloadBtn = document.getElementById('download-btn');
+    const calibMsg = document.getElementById('calib-msg');
+
+    const G_TO_N = 0.00980665; 
+    let forceFactor = 385 * G_TO_N; 
+
+    // 데이터 저장소
+    let logData = [];
+    let loggingInterval = null;
+    let isTouching = false;
+    let startTime = 0;
+
+    // 위치 및 움직임 계산 변수
+    let currentRawForce = 0;
+    let currentForceN = 0;
+    let currentX = 0, currentY = 0;
+    
+    // [수정됨] 직전 로그 시점의 위치 (움직임 판별용)
+    let lastLogX = 0, lastLogY = 0;
+    let isDragging = false;
+
+    // === 이벤트 리스너 ===
+
+    // 1. 터치 시작
+    touchArea.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        if (e.touches.length > 0) {
+            resetSession();
+            isTouching = true;
+            touchArea.classList.add('active');
+            touchArea.innerHTML = "<div style='font-size:3rem;'>✊</div><div>측정 중...</div>";
+
+            // 초기 위치 설정
+            currentX = e.touches[0].clientX;
+            currentY = e.touches[0].clientY;
+            lastLogX = currentX;
+            lastLogY = currentY;
+            isDragging = false;
+            
+            startTime = Date.now();
+            startLogging();
+        }
+    }, { passive: false });
+
+    // 2. 터치 이동 (좌표와 압력만 업데이트, 드래그 판별은 setInterval로 이동)
+    touchArea.addEventListener('touchmove', (e) => {
+        e.preventDefault();
+        if (e.touches.length > 0 && isTouching) {
+            const touch = e.touches[0];
+
+            currentRawForce = touch.force || touch.webkitForce || 0;
+            currentForceN = (currentRawForce * forceFactor);
+            
+            currentX = touch.clientX;
+            currentY = touch.clientY;
+            
+            // 화면 값 업데이트 (상태 텍스트는 setInterval에서 업데이트됨)
+            forceDisplay.innerText = currentForceN.toFixed(3);
+        }
+    }, { passive: false });
+
+    // 3. 터치 종료
+    touchArea.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        stopLogging();
+        isTouching = false;
+        
+        currentRawForce = 0;
+        currentForceN = 0;
+        isDragging = false;
+        
+        forceDisplay.innerText = "0.000";
+        dragStatusDisplay.innerText = "측정 완료";
+        dragStatusDisplay.classList.remove('warning');
+        
+        touchArea.classList.remove('active');
+        touchArea.innerHTML = "<div style='font-size: 2rem;'>👇</div><div style='margin-top:10px;'>다시 누르면<br>시작합니다</div>";
+        
+        if (logData.length > 1) downloadBtn.disabled = false;
+    });
+
+    // === 로깅 및 로직 함수 ===
+
+    function startLogging() {
+        if (loggingInterval) clearInterval(loggingInterval);
+        
+        if(logData.length === 0) {
+            logData.push(["Time(s)", "Force(N)", "Raw", "X", "Y", "Is_Moving"]);
+        }
+
+        loggingInterval = setInterval(() => {
+            if (!isTouching) return;
+
+            // [수정된 로직] 드래그 판별: 직전 위치(lastLogX/Y)와 현재 위치 비교
+            // 0.05초 동안 이동한 거리를 계산
+            const moveDist = Math.sqrt(Math.pow(currentX - lastLogX, 2) + Math.pow(currentY - lastLogY, 2));
+            
+            // 0.05초 동안 2픽셀 이상 움직였으면 움직이는 중으로 판단 (민감도 조절 가능)
+            isDragging = moveDist > 2;
+
+            // 현재 위치를 '직전 위치'로 갱신 (다음 비교를 위해)
+            lastLogX = currentX;
+            lastLogY = currentY;
+
+            // 상태 텍스트 업데이트
+            if (isDragging) {
+                dragStatusDisplay.innerText = "움직이는 중 ⚠️";
+                dragStatusDisplay.classList.add('warning');
+            } else {
+                dragStatusDisplay.innerText = "고정됨 (안정)";
+                dragStatusDisplay.classList.remove('warning');
+            }
+
+            // 데이터 저장
+            const now = Date.now();
+            const timeSec = ((now - startTime) / 1000).toFixed(2);
+            
+            logData.push([
+                timeSec,
+                currentForceN.toFixed(4),
+                currentRawForce.toFixed(4),
+                currentX.toFixed(0),
+                currentY.toFixed(0),
+                isDragging ? "TRUE" : "FALSE"
+            ]);
+
+            logCountDisplay.innerText = `데이터: ${logData.length - 1}건`;
+        }, 50); // 50ms 간격
+    }
+
+    function stopLogging() {
+        if (loggingInterval) {
+            clearInterval(loggingInterval);
+            loggingInterval = null;
+        }
+    }
+
+    function resetSession() {
+        logData = [];
+        downloadBtn.disabled = true;
+        logCountDisplay.innerText = "데이터: 0건";
+        calibMsg.innerText = "";
+    }
+
+    function calibrate() {
+        const inputWeight = parseFloat(document.getElementById('calib-weight').value);
+        if (!inputWeight || inputWeight <= 0) {
+            alert("무게(g)를 입력하세요."); return;
+        }
+        if (currentRawForce <= 0.02) {
+            alert("화면을 누른 상태에서 버튼을 눌러주세요."); return;
+        }
+
+        const targetN = inputWeight * G_TO_N;
+        forceFactor = targetN / currentRawForce;
+        
+        calibMsg.innerText = `✅ 보정 완료 (${inputWeight}g 기준)`;
+        forceDisplay.innerText = (currentRawForce * forceFactor).toFixed(3);
+    }
+
+    downloadBtn.addEventListener('click', () => {
+        if (logData.length <= 1) return;
+        let csvContent = "data:text/csv;charset=utf-8,\uFEFF"; 
+        logData.forEach(row => csvContent += row.join(",") + "\r\n");
+        
+        const link = document.createElement("a");
+        link.setAttribute("href", encodeURI(csvContent));
+        const date = new Date();
+        link.setAttribute("download", `Force_${date.getHours()}${date.getMinutes()}${date.getSeconds()}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    });
+</script>
+
+</body>
+</html>
