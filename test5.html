@@ -3,14 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
-    <title>3x3 Matrix Force Logger</title>
+    <title>Full Screen 3x3 Force Scale</title>
     <style>
+        /* 기본 설정 */
         html, body {
             height: 100%; margin: 0; padding: 0; overflow: hidden;
-            background-color: #f0f2f5;
+            background-color: #f8f9fa;
             font-family: -apple-system, BlinkMacSystemFont, "Roboto", sans-serif;
             text-align: center; color: #333;
-            user-select: none; -webkit-touch-callout: none;
+            /* 텍스트 선택 및 롱터치 메뉴 원천 차단 */
+            user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
         }
 
         .container {
@@ -20,7 +22,7 @@
         /* 상단 패널 */
         .top-panel {
             flex: 0 0 auto; background: white; padding: 15px; border-radius: 20px;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.1); margin-bottom: 10px; z-index: 2;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.05); margin-bottom: 10px; z-index: 5;
         }
         #current-force {
             font-size: 4em; font-weight: 900; color: #222; margin: 0; line-height: 1;
@@ -28,24 +30,30 @@
         }
         .status-text { font-size: 0.9em; color: #666; margin-top: 5px; display: flex; justify-content: space-between; padding: 0 10px;}
 
-        /* 터치 영역 (측정 모드) */
+        /* 터치 영역 (메인) */
         #touch-area {
-            flex: 1; width: 100%; position: relative;
+            flex: 1; /* 남은 공간 모두 차지 */
+            width: 100%; position: relative;
             background-color: #e9ecef; border-radius: 15px;
             display: flex; flex-direction: column; align-items: center; justify-content: center;
-            font-size: 1.2em; font-weight: bold; color: #868e96;
             border: 4px dashed #adb5bd; margin-bottom: 10px;
             touch-action: none; overflow: hidden;
+            /* 중요: 내부 요소 위치 잡기 위해 relative 유지 */
         }
         #touch-area.active { 
-            background-color: #ffc9c9 !important; border-color: #ff6b6b !important; color: #c92a2a !important; 
+            background-color: #ffc9c9 !important; border-color: #ff6b6b !important; 
+        }
+
+        /* 터치 영역 내부 텍스트 및 아이콘 (클릭 방지 핵심) */
+        .touch-content {
+            pointer-events: none; /* 여기가 핵심: 글씨가 터치를 방해하지 않게 함 */
+            z-index: 1;
         }
 
         /* 하단 패널 */
         .bottom-panel {
-            flex: 0 0 auto; background: white; padding: 10px; border-radius: 15px; font-size: 0.9em; z-index: 2;
+            flex: 0 0 auto; background: white; padding: 10px; border-radius: 15px; font-size: 0.9em; z-index: 5;
         }
-        .control-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
         
         button { border: none; border-radius: 8px; padding: 12px; font-weight: bold; font-size: 15px; cursor: pointer; width: 100%; transition: 0.2s; }
         .btn-blue { background-color: #339af0; color: white; }
@@ -53,46 +61,49 @@
         .btn-gray { background-color: #e9ecef; color: #333; }
         button:disabled { background-color: #dee2e6; color: #adb5bd; cursor: not-allowed; }
 
-        /* === 3x3 보정 위자드 오버레이 === */
+        /* === 3x3 보정 위자드 스타일 === */
         #calib-overlay {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(255,255,255,0.98); z-index: 20;
-            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            background: rgba(255,255,255,0.98); z-index: 50;
+            display: flex; flex-direction: column; 
             padding: 10px; box-sizing: border-box;
         }
-        .wizard-header { margin-bottom: 20px; }
-        
-        /* 3x3 그리드 시각화 */
+
+        /* 그리드 컨테이너 (화면 꽉 채우기) */
         .grid-container {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
             grid-template-rows: repeat(3, 1fr);
-            gap: 5px;
-            width: 300px; height: 300px;
-            margin-bottom: 20px;
+            gap: 2px;
+            flex: 1; /* 남은 높이 모두 차지 */
+            width: 100%;
+            margin: 10px 0;
         }
+
         .grid-cell {
-            background: #eee; border: 2px solid #ddd; border-radius: 8px;
+            background: #f1f3f5; border: 1px solid #dee2e6; border-radius: 4px;
             display: flex; align-items: center; justify-content: center;
-            font-size: 0.8em; color: #aaa;
+            font-size: 1.2em; color: #adb5bd; font-weight: bold;
+            position: relative;
         }
+        
+        /* 타겟 셀 스타일 */
         .grid-cell.target {
-            background: #ffe3e3; border-color: red; color: red; font-weight: bold;
-            box-shadow: 0 0 10px rgba(255,0,0,0.2);
-            animation: pulse 1.5s infinite;
+            background: #ffe3e3; border: 2px solid red; color: red; z-index: 2;
+            animation: pulse 1s infinite alternate;
         }
+        /* 완료된 셀 스타일 */
         .grid-cell.done {
-            background: #d3f9d8; border-color: #20c997; color: #0ca678;
+            background: #d3f9d8; border: 1px solid #20c997; color: #0ca678;
         }
 
         @keyframes pulse {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.05); }
-            100% { transform: scale(1); }
+            from { background-color: #ffe3e3; transform: scale(0.98); }
+            to { background-color: #ffc9c9; transform: scale(1.0); }
         }
 
         #drag-status.warning { color: red; font-weight: bold; }
-        input[type=number] { padding: 8px; width: 80px; text-align: center; border: 1px solid #ccc; border-radius: 5px; font-size: 1.2em; }
+        input[type=number] { padding: 10px; width: 100px; text-align: center; border: 1px solid #ccc; border-radius: 8px; font-size: 1.2em; margin-bottom: 20px;}
     </style>
 </head>
 <body>
@@ -107,41 +118,56 @@
     </div>
 
     <div id="touch-area">
-        <div id="touch-msg">
-            <div style="font-size: 2rem;">👇</div>
-            <div style="margin-top:10px;">누르면 측정됩니다</div>
+        <div class="touch-content" id="touch-msg">
+            <div style="font-size: 3rem;">👇</div>
+            <div style="margin-top:10px; font-size:1.2rem; font-weight:bold; color:#868e96;">
+                이 영역 전체가<br>저울입니다
+            </div>
         </div>
-        <div style="position:absolute; width:100%; height:33%; top:33%; border-top:1px dashed #ccc; border-bottom:1px dashed #ccc; pointer-events:none;"></div>
-        <div style="position:absolute; width:33%; height:100%; left:33%; border-left:1px dashed #ccc; border-right:1px dashed #ccc; pointer-events:none;"></div>
+        
+        <div class="touch-content" style="position:absolute; width:100%; height:33.3%; top:33.3%; border-top:1px dashed #ced4da; border-bottom:1px dashed #ced4da;"></div>
+        <div class="touch-content" style="position:absolute; width:33.3%; height:100%; left:33.3%; border-left:1px dashed #ced4da; border-right:1px dashed #ced4da;"></div>
     </div>
 
     <div class="bottom-panel">
-        <button class="btn-gray" onclick="startCalibrationMode()">⚙️ 3x3 정밀 보정 (다시하기)</button>
+        <button class="btn-gray" onclick="startCalibrationMode()">⚙️ 3x3 보정 모드 진입</button>
         <div style="margin-top:10px; font-size: 0.8em; color: #555;" id="log-count">데이터: 0건</div>
         <button id="download-btn" class="btn-blue" style="margin-top:5px;" disabled>📥 엑셀(CSV) 저장</button>
     </div>
 
     <div id="calib-overlay">
-        <div id="calib-start" style="text-align: center;">
-            <h2>📏 3x3 정밀 보정</h2>
-            <p>화면을 9개 구역으로 나누어 보정합니다.<br>물체의 무게를 입력하세요.</p>
-            <div style="margin: 20px;">
-                <input type="number" id="wizard-weight" value="100"> g
-            </div>
-            <button class="btn-green" onclick="startWizard()">시작하기</button>
+        
+        <div id="calib-start" style="margin: auto; text-align: center; width: 100%;">
+            <h2>📏 정밀 보정 설정</h2>
+            <p style="color:#666; margin-bottom:30px;">
+                화면을 9등분하여 정밀하게 보정합니다.<br>
+                기준이 될 물체의 무게를 입력하세요.
+            </p>
+            <input type="number" id="wizard-weight" value="100" placeholder="g">
+            <span style="font-size:1.2em; font-weight:bold;">g</span>
+            <br>
+            <button class="btn-green" onclick="startWizard()" style="padding: 15px; font-size: 1.1em;">측정 시작하기</button>
             <br><br>
-            <button class="btn-gray" onclick="closeCalibration()">건너뛰기</button>
+            <button class="btn-gray" onclick="closeCalibration()">건너뛰기 (기본값 사용)</button>
         </div>
 
-        <div id="calib-process" style="display:none; width:100%; text-align:center;">
-            <h3 id="step-title">Step 1 / 9</h3>
-            <p style="font-size:0.9em; color:#666;">빨간색으로 깜빡이는 칸에<br>물체를 올리고 버튼을 누르세요.</p>
+        <div id="calib-process" style="display:none; flex-direction:column; height:100%; width:100%;">
+            <div style="flex:0 0 auto; text-align:center; padding:10px;">
+                <h3 id="step-title" style="margin:0;">Step 1 / 9</h3>
+                <p style="margin:5px 0; color:#e03131; font-weight:bold; font-size:0.9em;">
+                    빨간색 박스 위에 물체를 올리세요
+                </p>
+            </div>
             
             <div class="grid-container" id="grid-visual">
                 </div>
 
-            <div style="font-weight:bold; margin-bottom:10px;">Raw Value: <span id="calib-raw">0.00</span></div>
-            <button class="btn-green" onclick="captureCurrentStep()">측정 및 다음</button>
+            <div style="flex:0 0 auto; padding:10px;">
+                <div style="font-weight:bold; margin-bottom:10px; text-align:center;">
+                    현재 Raw 값: <span id="calib-raw" style="color:#228be6;">0.00</span>
+                </div>
+                <button class="btn-green" onclick="captureCurrentStep()" style="padding:15px;">측정 및 다음으로</button>
+            </div>
         </div>
     </div>
 </div>
@@ -154,6 +180,7 @@
     const logCountDisplay = document.getElementById('log-count');
     const downloadBtn = document.getElementById('download-btn');
     const calibOverlay = document.getElementById('calib-overlay');
+    
     const G_TO_N = 0.00980665; 
 
     // 데이터 저장소
@@ -162,48 +189,45 @@
     let isTouching = false;
     let startTime = 0;
 
-    // 움직임 계산용
+    // 측정 값
     let currentRawForce = 0;
     let currentForceN = 0;
     let currentX = 0, currentY = 0;
     let lastLogX = 0, lastLogY = 0;
     let isDragging = false;
 
-    // === 3x3 보정 변수 ===
+    // 보정 데이터
     let targetWeightGram = 100;
     let isCalibrated = false;
     let defaultFactor = 385 * G_TO_N;
-
-    // 보정 포인트 (9개)
-    // 0:TL, 1:TM, 2:TR, 3:ML, 4:MM, 5:MR, 6:BL, 7:BM, 8:BR
-    // 앵커 위치: Width의 20%, 50%, 80% / Height의 20%, 50%, 80%
     let calibPoints = Array(9).fill(0).map(() => ({ raw: 0, factor: 0 }));
     let currentStep = 0;
 
-    const GRID_X = [0.2, 0.5, 0.8]; // 20%, 50%, 80% 지점
-    const GRID_Y = [0.2, 0.5, 0.8];
+    // 그리드 기준점 (3x3 보간용)
+    const GRID_X = [0.166, 0.5, 0.833]; // 각 셀의 중심점 비율 (1/6, 3/6, 5/6)
+    const GRID_Y = [0.166, 0.5, 0.833];
 
-    // === 초기화 및 이벤트 ===
+    // === 초기화 ===
     createGridVisuals();
-    startCalibrationMode(); // 시작 시 자동 실행
+    startCalibrationMode(); 
 
+    // === 이벤트 리스너 ===
+    // touchstart, touchmove에 preventDefault를 걸어 브라우저 기본 동작(텍스트 선택 등) 차단
     touchArea.addEventListener('touchstart', handleTouchStart, { passive: false });
     touchArea.addEventListener('touchmove', handleTouchMove, { passive: false });
     touchArea.addEventListener('touchend', handleTouchEnd, { passive: false });
 
-    // === 터치 핸들러 ===
     function handleTouchStart(e) {
-        e.preventDefault();
+        e.preventDefault(); // 중요: 텍스트 선택 방지
         if (e.touches.length > 0) {
             resetSession();
             isTouching = true;
             touchArea.classList.add('active');
-            document.getElementById('touch-msg').style.display = 'none';
+            document.getElementById('touch-msg').style.visibility = 'hidden';
 
             currentX = e.touches[0].clientX;
             currentY = e.touches[0].clientY;
-            lastLogX = currentX;
-            lastLogY = currentY;
+            lastLogX = currentX; lastLogY = currentY;
             isDragging = false;
             
             startTime = Date.now();
@@ -212,20 +236,20 @@
     }
 
     function handleTouchMove(e) {
-        e.preventDefault();
+        e.preventDefault(); // 중요: 스크롤/선택 방지
         if (e.touches.length > 0) {
             const touch = e.touches[0];
             currentRawForce = touch.force || touch.webkitForce || 0;
             currentX = touch.clientX;
             currentY = touch.clientY;
 
-            // 보정 모드일 때 UI 업데이트
+            // 보정 중일 때
             if (calibOverlay.style.display !== 'none') {
                 document.getElementById('calib-raw').innerText = currentRawForce.toFixed(3);
                 return;
             }
 
-            // 측정 모드: 3x3 보간법 적용
+            // 측정 중일 때 (Bilinear Interpolation)
             currentForceN = calculateBilinearForce(currentRawForce, currentX, currentY);
             forceDisplay.innerText = currentForceN.toFixed(3);
         }
@@ -238,81 +262,75 @@
         
         currentRawForce = 0;
         currentForceN = 0;
-        isDragging = false;
-        
         forceDisplay.innerText = "0.000";
         dragStatusDisplay.innerText = "대기중";
         dragStatusDisplay.classList.remove('warning');
+        
         touchArea.classList.remove('active');
-        document.getElementById('touch-msg').style.display = 'block';
+        document.getElementById('touch-msg').style.visibility = 'visible';
         
         if (logData.length > 1) downloadBtn.disabled = false;
     }
 
-    // === 핵심: 이중 선형 보간법 (Bilinear Interpolation) ===
+    // === 이중 선형 보간법 (3x3 Grid) ===
     function calculateBilinearForce(raw, xPx, yPx) {
         if (!isCalibrated) return raw * defaultFactor;
 
         const rect = touchArea.getBoundingClientRect();
-        const w = rect.width;
-        const h = rect.height;
-
-        // 좌표 정규화 (0.0 ~ 1.0)
-        let nx = (xPx - rect.left) / w;
-        let ny = (yPx - rect.top) / h;
+        // 터치 영역 내 상대 좌표 비율 (0~1)
+        let nx = (xPx - rect.left) / rect.width;
+        let ny = (yPx - rect.top) / rect.height;
         nx = Math.max(0, Math.min(1, nx));
         ny = Math.max(0, Math.min(1, ny));
 
-        // 어느 구간(Grid Cell)에 있는지 찾기
-        // Grid Index: 0 (0.2~0.5 사이), 1 (0.5~0.8 사이) ... 
-        // 편의상 2개의 구간으로 단순화: Left-Mid, Mid-Right
+        // 어느 사분면(Quadrant)에 있는지 찾기
+        // Grid Points: 0.16(L), 0.5(M), 0.83(R)
+        // 보간을 위해 0~0.5 구간과 0.5~1.0 구간으로 나눔
+        let col = (nx < 0.5) ? 0 : 1;
+        let row = (ny < 0.5) ? 0 : 1;
+
+        // 보간 가중치 u, v 계산
+        // 왼쪽 구간이면 L(0.16)~M(0.5) 사이 보간, 오른쪽이면 M(0.5)~R(0.83) 사이 보간
+        let x1 = GRID_X[col], x2 = GRID_X[col+1];
+        let y1 = GRID_Y[row], y2 = GRID_Y[row+1];
+
+        // 좌표가 그리드 중심점을 넘어설 경우를 위한 클램핑 처리 필요하지만
+        // 약식으로 중심점 사이 구간 비율만 계산
+        let u = (nx - x1) / (x2 - x1);
+        let v = (ny - y1) / (y2 - y1);
         
-        // X 구간 인덱스 (0: Left-Mid 구간, 1: Mid-Right 구간)
-        let xIdx = (nx < GRID_X[1]) ? 0 : 1;
-        let yIdx = (ny < GRID_Y[1]) ? 0 : 1;
-
-        // 보간 비율 계산 (0~1 사이 값)
-        let u = (nx - GRID_X[xIdx]) / (GRID_X[xIdx+1] - GRID_X[xIdx]);
-        let v = (ny - GRID_Y[yIdx]) / (GRID_Y[yIdx+1] - GRID_Y[yIdx]);
-
-        // 범위 밖 클램핑 (0.2 미만이나 0.8 초과인 경우 가까운 값으로)
+        // 외곽(0~0.16 or 0.83~1.0) 처리를 위해 u, v 제한
         u = Math.max(0, Math.min(1, u));
         v = Math.max(0, Math.min(1, v));
 
-        // 4개의 이웃 포인트 인덱스 계산
-        // calibPoints 배열 구조: [TL, TM, TR, ML, MM, MR, BL, BM, BR]
-        // Row 0: 0,1,2 | Row 1: 3,4,5 | Row 2: 6,7,8
-        const p1_idx = (yIdx * 3) + xIdx;       // Top-Left
-        const p2_idx = (yIdx * 3) + (xIdx + 1); // Top-Right
-        const p3_idx = ((yIdx + 1) * 3) + xIdx;     // Bottom-Left
-        const p4_idx = ((yIdx + 1) * 3) + (xIdx + 1); // Bottom-Right
+        // 참조할 4개 점의 인덱스
+        // Grid: 0 1 2 / 3 4 5 / 6 7 8
+        const p1 = (row * 3) + col;       // Top-Left
+        const p2 = (row * 3) + (col + 1); // Top-Right
+        const p3 = ((row + 1) * 3) + col;     // Bottom-Left
+        const p4 = ((row + 1) * 3) + (col + 1); // Bottom-Right
 
-        const f1 = calibPoints[p1_idx].factor;
-        const f2 = calibPoints[p2_idx].factor;
-        const f3 = calibPoints[p3_idx].factor;
-        const f4 = calibPoints[p4_idx].factor;
+        // 보간 적용
+        const f1 = calibPoints[p1].factor;
+        const f2 = calibPoints[p2].factor;
+        const f3 = calibPoints[p3].factor;
+        const f4 = calibPoints[p4].factor;
 
-        // Bilinear Formula
-        // f(u,v) = (1-u)(1-v)f1 + u(1-v)f2 + (1-u)v*f3 + uv*f4
-        const interpolatedFactor = 
-            (1 - u) * (1 - v) * f1 +
-            u * (1 - v) * f2 +
-            (1 - u) * v * f3 +
-            u * v * f4;
-
-        return raw * interpolatedFactor;
+        const factor = (1-u)*(1-v)*f1 + u*(1-v)*f2 + (1-u)*v*f3 + u*v*f4;
+        return raw * factor;
     }
 
-    // === 보정 위자드 로직 ===
+    // === 보정 위자드 UI ===
     function createGridVisuals() {
         const container = document.getElementById('grid-visual');
         container.innerHTML = '';
-        const labels = ["TL", "TM", "TR", "ML", "MM", "MR", "BL", "BM", "BR"];
+        // 9개 셀 생성
+        const labels = ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
         for(let i=0; i<9; i++) {
             const div = document.createElement('div');
             div.className = 'grid-cell';
             div.id = `gc-${i}`;
-            div.innerText = labels[i];
+            div.innerHTML = `<span style="pointer-events:none">${labels[i]}</span>`; // 숫자 클릭 방지
             container.appendChild(div);
         }
     }
@@ -330,32 +348,25 @@
         targetWeightGram = w;
 
         document.getElementById('calib-start').style.display = 'none';
-        document.getElementById('calib-process').style.display = 'block';
+        document.getElementById('calib-process').style.display = 'flex'; // flex로 변경하여 꽉 채움
         updateWizardUI();
     }
 
     function updateWizardUI() {
         document.getElementById('step-title').innerText = `Step ${currentStep+1} / 9`;
-        
-        // 그리드 하이라이트 초기화
         for(let i=0; i<9; i++) {
             const cell = document.getElementById(`gc-${i}`);
             cell.classList.remove('target');
             if(i < currentStep) cell.classList.add('done');
         }
-        // 현재 타겟
-        if(currentStep < 9) {
-            document.getElementById(`gc-${currentStep}`).classList.add('target');
-        }
+        if(currentStep < 9) document.getElementById(`gc-${currentStep}`).classList.add('target');
     }
 
     function captureCurrentStep() {
         if (currentRawForce <= 0.02) {
-            alert("물체가 인식되지 않았습니다. 꾹 눌러주세요."); return;
+            alert("물체를 올리고 꾹 눌러주세요!"); return;
         }
-
         calibPoints[currentStep].raw = currentRawForce;
-        
         currentStep++;
         if(currentStep < 9) {
             updateWizardUI();
@@ -365,33 +376,29 @@
     }
 
     function finishCalibration() {
-        // 계수 계산
         const targetN = targetWeightGram * G_TO_N;
-        calibPoints.forEach(p => {
-            p.factor = targetN / p.raw;
-        });
-
+        calibPoints.forEach(p => p.factor = targetN / p.raw);
         isCalibrated = true;
         closeCalibration();
-        alert("3x3 정밀 보정이 완료되었습니다!");
+        alert("3x3 보정 완료!");
     }
 
     function closeCalibration() {
         calibOverlay.style.display = 'none';
     }
 
-    // === 로깅 함수 (기존과 동일) ===
+    // === CSV 저장 ===
     function startLogging() {
         if (loggingInterval) clearInterval(loggingInterval);
         if(logData.length === 0) logData.push(["Time(s)", "Force(N)", "Raw", "X", "Y", "Moving"]);
-
+        
         loggingInterval = setInterval(() => {
             if (!isTouching) return;
-            const moveDist = Math.sqrt(Math.pow(currentX - lastLogX, 2) + Math.pow(currentY - lastLogY, 2));
-            isDragging = moveDist > 2;
+            const dist = Math.sqrt(Math.pow(currentX - lastLogX, 2) + Math.pow(currentY - lastLogY, 2));
+            isDragging = dist > 2;
             lastLogX = currentX; lastLogY = currentY;
 
-            if (isDragging) {
+            if(isDragging) {
                 dragStatusDisplay.innerText = "이동 중 ⚠️";
                 dragStatusDisplay.classList.add('warning');
             } else {
@@ -399,17 +406,17 @@
                 dragStatusDisplay.classList.remove('warning');
             }
 
-            const now = Date.now();
-            const timeSec = ((now - startTime) / 1000).toFixed(2);
-            logData.push([timeSec, currentForceN.toFixed(4), currentRawForce.toFixed(4), currentX.toFixed(0), currentY.toFixed(0), isDragging ? "TRUE" : "FALSE"]);
+            const timeSec = ((Date.now() - startTime) / 1000).toFixed(2);
+            logData.push([timeSec, currentForceN.toFixed(4), currentRawForce.toFixed(4), currentX.toFixed(0), currentY.toFixed(0), isDragging?"TRUE":"FALSE"]);
             logCountDisplay.innerText = `데이터: ${logData.length - 1}건`;
-        }, 50); 
+        }, 50);
     }
-
+    
     function stopLogging() {
         if (loggingInterval) clearInterval(loggingInterval);
         loggingInterval = null;
     }
+    
     function resetSession() {
         logData = [];
         downloadBtn.disabled = true;
@@ -418,14 +425,12 @@
 
     downloadBtn.addEventListener('click', () => {
         if (logData.length <= 1) return;
-        let csvContent = "data:text/csv;charset=utf-8,\uFEFF"; 
-        logData.forEach(row => csvContent += row.join(",") + "\r\n");
-        const link = document.createElement("a");
-        link.setAttribute("href", encodeURI(csvContent));
-        const date = new Date();
-        link.setAttribute("download", `Force_3x3_${date.getHours()}${date.getMinutes()}.csv`);
-        document.body.appendChild(link);
-        link.click(); document.body.removeChild(link);
+        let csv = "data:text/csv;charset=utf-8,\uFEFF";
+        logData.forEach(r => csv += r.join(",") + "\r\n");
+        const a = document.createElement("a");
+        a.href = encodeURI(csv);
+        a.download = `Force3x3_${Date.now()}.csv`;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
     });
 </script>
 
