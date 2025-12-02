@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
-    <title>Perfect Touch Sensor</title>
+    <title>Smart Auto-Capture Scale</title>
     <style>
         /* === 기본 설정 === */
         html, body {
@@ -29,30 +29,27 @@
         }
         .status-text { font-size: 0.9em; color: #666; margin-top: 5px; display: flex; justify-content: space-between; padding: 0 10px;}
 
-        /* === 터치 영역 컨테이너 (레이어 겹치는 곳) === */
+        /* === 터치 영역 컨테이너 === */
         #touch-container {
             flex: 1; width: 100%; position: relative;
             background-color: #e9ecef; border-radius: 15px; border: 4px dashed #adb5bd;
-            overflow: hidden; margin-bottom: 10px;
+            overflow: hidden; margin-bottom: 10px; transition: background-color 0.2s;
         }
-        /* 활성화 시 배경색 변경 (JS에서 클래스 추가) */
         #touch-container.active {
             background-color: #ffe3e3; border-color: #ff6b6b;
         }
 
-        /* [Layer 1] 시각적 요소 (바닥에 깔림) */
+        /* [Layer 1] 시각적 요소 */
         .visual-layer {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             display: flex; flex-direction: column; align-items: center; justify-content: center;
-            z-index: 1; /* 낮은 우선순위 */
+            z-index: 1;
         }
 
-        /* [Layer 2] 실제 센서 (최상단 투명 막) */
+        /* [Layer 2] 투명 센서 막 */
         #sensor-layer {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            z-index: 100; /* 가장 높은 우선순위: 무조건 얘가 터치를 받음 */
-            background-color: transparent; /* 투명 */
-            touch-action: none; /* 브라우저 기본 제스처 차단 */
+            z-index: 100; background-color: transparent; touch-action: none;
         }
 
         /* 하단 패널 */
@@ -69,17 +66,14 @@
         /* === 보정 위자드 스타일 === */
         #calib-overlay {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(255,255,255,0.98); z-index: 200; /* 센서보다 더 위 */
+            background: rgba(255,255,255,0.98); z-index: 200;
             display: flex; flex-direction: column; 
             padding: 10px; box-sizing: border-box;
         }
 
         .grid-container {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            grid-template-rows: repeat(3, 1fr);
-            gap: 2px;
-            flex: 1; width: 100%; margin: 10px 0;
+            display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr);
+            gap: 2px; flex: 1; width: 100%; margin: 10px 0;
         }
 
         .grid-cell {
@@ -87,12 +81,24 @@
             display: flex; align-items: center; justify-content: center;
             font-size: 1.2em; color: #adb5bd; font-weight: bold;
         }
-        .grid-cell.target { background: #ffe3e3; border: 2px solid red; color: red; animation: pulse 1s infinite alternate; }
+        .grid-cell.target { background: #ffe3e3; border: 2px solid red; color: red; }
         .grid-cell.done { background: #d3f9d8; border: 1px solid #20c997; color: #0ca678; }
-        @keyframes pulse { from { opacity: 0.6; } to { opacity: 1; } }
+
+        /* 자동 측정 진행바 */
+        #auto-progress-container {
+            width: 100%; height: 10px; background: #eee; border-radius: 5px; margin-top: 10px; overflow: hidden; display: none;
+        }
+        #auto-progress-bar {
+            width: 0%; height: 100%; background: #20c997; transition: width 0.1s linear;
+        }
 
         #drag-status.warning { color: red; font-weight: bold; }
         input[type=number] { padding: 10px; width: 100px; text-align: center; border: 1px solid #ccc; border-radius: 8px; font-size: 1.2em; margin-bottom: 20px;}
+        
+        /* 버튼 클릭 문제 해결용 스타일 */
+        #btn-next-step {
+            position: relative; z-index: 9999; /* 센서보다 무조건 위에 */
+        }
     </style>
 </head>
 <body>
@@ -107,7 +113,6 @@
     </div>
 
     <div id="touch-container">
-        
         <div class="visual-layer" id="visual-content">
             <div style="font-size: 3rem;">👇</div>
             <div style="margin-top:10px; font-size:1.2rem; font-weight:bold; color:#868e96;">
@@ -116,9 +121,7 @@
             <div style="position:absolute; width:100%; height:33.3%; top:33.3%; border-top:1px dashed #ccc; border-bottom:1px dashed #ccc;"></div>
             <div style="position:absolute; width:33.3%; height:100%; left:33.3%; border-left:1px dashed #ccc; border-right:1px dashed #ccc;"></div>
         </div>
-
         <div id="sensor-layer"></div>
-
     </div>
 
     <div class="bottom-panel">
@@ -129,49 +132,58 @@
 
     <div id="calib-overlay">
         <div id="calib-start" style="margin: auto; text-align: center; width: 100%;">
-            <h2>📏 정밀 보정 설정</h2>
+            <h2>📏 스마트 보정</h2>
             <p style="color:#666;">기준 물체 무게를 입력하세요.</p>
             <input type="number" id="wizard-weight" value="100" placeholder="g"> <span style="font-size:1.2em; font-weight:bold;">g</span><br>
             <button class="btn-green" onclick="startWizard()" style="padding: 15px; font-size: 1.1em;">측정 시작하기</button><br><br>
             <button class="btn-gray" onclick="closeCalibration()">건너뛰기</button>
         </div>
+
         <div id="calib-process" style="display:none; flex-direction:column; height:100%; width:100%;">
             <div style="text-align:center; padding:10px;">
                 <h3 id="step-title" style="margin:0;">Step 1 / 9</h3>
-                <p style="margin:5px 0; color:#e03131; font-weight:bold; font-size:0.9em;">빨간 박스를 꾹 누르세요</p>
+                <p id="step-desc" style="margin:5px 0; color:#e03131; font-weight:bold; font-size:0.9em;">
+                    빨간 박스를 꾹 누르고 기다리세요
+                </p>
+                <div id="auto-progress-container">
+                    <div id="auto-progress-bar"></div>
+                </div>
             </div>
+            
             <div style="flex:1; position:relative;">
                 <div class="grid-container" id="grid-visual" style="height:100%; margin:0;"></div>
                 <div id="calib-sensor" style="position:absolute; top:0; left:0; width:100%; height:100%; z-index:201; touch-action:none;"></div>
             </div>
+            
             <div style="padding:10px; text-align:center;">
                 <div style="font-weight:bold; margin-bottom:10px;">Raw Value: <span id="calib-raw" style="color:#228be6;">0.00</span></div>
-                <button class="btn-green" id="btn-next-step" style="padding:15px;">측정 및 다음</button>
+                <button class="btn-green" id="btn-next-step" style="padding:15px;">수동 저장 (또는 자동 대기)</button>
             </div>
         </div>
     </div>
 </div>
 
 <script>
-    // === DOM 요소 ===
+    // === DOM ===
     const touchContainer = document.getElementById('touch-container');
-    const sensorLayer = document.getElementById('sensor-layer'); // 메인 센서
-    const calibSensor = document.getElementById('calib-sensor'); // 보정용 센서
+    const sensorLayer = document.getElementById('sensor-layer'); 
+    const calibSensor = document.getElementById('calib-sensor');
     const forceDisplay = document.getElementById('current-force');
     const dragStatusDisplay = document.getElementById('drag-status');
     const logCountDisplay = document.getElementById('log-count');
     const downloadBtn = document.getElementById('download-btn');
     const calibOverlay = document.getElementById('calib-overlay');
     const nextStepBtn = document.getElementById('btn-next-step');
+    const progressBar = document.getElementById('auto-progress-bar');
+    const progressContainer = document.getElementById('auto-progress-container');
     
     const G_TO_N = 0.00980665; 
 
-    // 변수
+    // 측정 변수
     let logData = [];
     let loggingInterval = null;
     let isTouching = false;
     let startTime = 0;
-
     let currentRawForce = 0;
     let currentForceN = 0;
     let currentX = 0, currentY = 0;
@@ -185,6 +197,11 @@
     let calibPoints = Array(9).fill(0).map(() => ({ raw: 0, factor: 0 }));
     let currentStep = 0;
 
+    // 자동 측정 타이머 변수
+    let autoCaptureTimer = null;
+    let holdDuration = 0; // 누르고 있는 시간 (ms)
+    const REQUIRED_HOLD_MS = 1500; // 1.5초 유지 시 자동 저장
+
     const GRID_X = [0.166, 0.5, 0.833];
     const GRID_Y = [0.166, 0.5, 0.833];
 
@@ -192,27 +209,28 @@
     createGridVisuals();
     startCalibrationMode(); 
 
-    // === 이벤트 리스너 (센서 레이어에 직접 부착) ===
-    // 1. 메인 측정 센서
+    // === 이벤트 리스너 ===
     sensorLayer.addEventListener('touchstart', onTouchStart, { passive: false });
     sensorLayer.addEventListener('touchmove', onTouchMove, { passive: false });
     sensorLayer.addEventListener('touchend', onTouchEnd, { passive: false });
 
-    // 2. 보정용 센서 (화면이 다를 때 사용)
+    // 보정 센서 (자동 측정 로직 포함)
     calibSensor.addEventListener('touchstart', onCalibTouchStart, { passive: false });
     calibSensor.addEventListener('touchmove', onCalibTouchMove, { passive: false });
     calibSensor.addEventListener('touchend', onCalibTouchEnd, { passive: false });
 
-    // "측정 및 다음" 버튼 클릭 이벤트 (터치와 충돌 방지 위해 click 사용)
-    nextStepBtn.addEventListener('click', captureCurrentStep);
+    // 버튼 클릭 (수동)
+    nextStepBtn.addEventListener('click', () => {
+        captureCurrentStep(true); // 수동 클릭 강제 저장
+    });
 
     // === 메인 측정 로직 ===
     function onTouchStart(e) {
-        e.preventDefault(); // 필수: 스크롤 및 선택 방지
+        e.preventDefault();
         if (e.touches.length > 0) {
             resetSession();
             isTouching = true;
-            touchContainer.classList.add('active'); // 배경색 변경
+            touchContainer.classList.add('active');
             document.getElementById('visual-content').style.visibility = 'hidden';
 
             currentX = e.touches[0].clientX;
@@ -232,8 +250,6 @@
             currentRawForce = touch.force || touch.webkitForce || 0;
             currentX = touch.clientX;
             currentY = touch.clientY;
-
-            // 보간법 적용하여 N값 계산
             currentForceN = calculateBilinearForce(currentRawForce, currentX, currentY);
             forceDisplay.innerText = currentForceN.toFixed(3);
         }
@@ -243,22 +259,27 @@
         e.preventDefault();
         stopLogging();
         isTouching = false;
-        
-        currentRawForce = 0;
-        currentForceN = 0;
+        currentRawForce = 0; currentForceN = 0;
         forceDisplay.innerText = "0.000";
         dragStatusDisplay.innerText = "대기중";
         dragStatusDisplay.classList.remove('warning');
-        
         touchContainer.classList.remove('active');
         document.getElementById('visual-content').style.visibility = 'visible';
-        
         if (logData.length > 1) downloadBtn.disabled = false;
     }
 
-    // === 보정용 터치 로직 (값만 읽음) ===
-    function onCalibTouchStart(e) { e.preventDefault(); }
-    function onCalibTouchEnd(e) { e.preventDefault(); currentRawForce = 0; updateCalibDisplay(); }
+    // === 보정 및 자동 측정 로직 (핵심) ===
+    function onCalibTouchStart(e) {
+        e.preventDefault();
+        holdDuration = 0;
+        updateProgress(0);
+        progressContainer.style.display = 'block';
+        
+        // 타이머 시작
+        if(autoCaptureTimer) clearInterval(autoCaptureTimer);
+        autoCaptureTimer = setInterval(checkAutoCapture, 100); // 0.1초마다 체크
+    }
+
     function onCalibTouchMove(e) {
         e.preventDefault();
         if (e.touches.length > 0) {
@@ -267,48 +288,76 @@
             updateCalibDisplay();
         }
     }
+
+    function onCalibTouchEnd(e) {
+        e.preventDefault();
+        currentRawForce = 0;
+        updateCalibDisplay();
+        
+        // 터치 떼면 타이머 및 게이지 초기화
+        resetAutoCapture();
+    }
+
+    function checkAutoCapture() {
+        // 힘이 충분할 때만 게이지 증가
+        if (currentRawForce > 0.02) {
+            holdDuration += 100;
+            const percent = Math.min(100, (holdDuration / REQUIRED_HOLD_MS) * 100);
+            updateProgress(percent);
+
+            if (holdDuration >= REQUIRED_HOLD_MS) {
+                // 시간 충족 시 자동 저장
+                resetAutoCapture();
+                captureCurrentStep(false); // 자동 저장 호출
+            }
+        } else {
+            // 힘 빠지면 리셋
+            holdDuration = 0;
+            updateProgress(0);
+        }
+    }
+
+    function resetAutoCapture() {
+        if(autoCaptureTimer) clearInterval(autoCaptureTimer);
+        autoCaptureTimer = null;
+        holdDuration = 0;
+        updateProgress(0);
+    }
+
+    function updateProgress(percent) {
+        progressBar.style.width = percent + '%';
+        if(percent > 0) {
+            document.getElementById('step-desc').innerText = percent >= 100 ? "저장 중..." : "측정 중... 유지하세요";
+            document.getElementById('step-desc').style.color = "#20c997";
+        } else {
+            document.getElementById('step-desc').innerText = "빨간 박스를 꾹 누르고 기다리세요";
+            document.getElementById('step-desc').style.color = "#e03131";
+        }
+    }
+
     function updateCalibDisplay() {
         const el = document.getElementById('calib-raw');
         if(el) el.innerText = currentRawForce.toFixed(3);
     }
 
-
-    // === 보간법 및 기능 함수들 (이전과 동일) ===
     function calculateBilinearForce(raw, xPx, yPx) {
         if (!isCalibrated) return raw * defaultFactor;
-
-        const rect = sensorLayer.getBoundingClientRect(); // 센서 크기 기준
+        const rect = sensorLayer.getBoundingClientRect();
         let nx = (xPx - rect.left) / rect.width;
         let ny = (yPx - rect.top) / rect.height;
-        nx = Math.max(0, Math.min(1, nx));
-        ny = Math.max(0, Math.min(1, ny));
-
-        let col = (nx < 0.5) ? 0 : 1;
-        let row = (ny < 0.5) ? 0 : 1;
-
+        nx = Math.max(0, Math.min(1, nx)); ny = Math.max(0, Math.min(1, ny));
+        let col = (nx < 0.5) ? 0 : 1; let row = (ny < 0.5) ? 0 : 1;
         let x1 = GRID_X[col], x2 = GRID_X[col+1];
         let y1 = GRID_Y[row], y2 = GRID_Y[row+1];
-
-        let u = (nx - x1) / (x2 - x1);
-        let v = (ny - y1) / (y2 - y1);
-        u = Math.max(0, Math.min(1, u));
-        v = Math.max(0, Math.min(1, v));
-
-        const p1 = (row * 3) + col;
-        const p2 = (row * 3) + (col + 1);
-        const p3 = ((row + 1) * 3) + col;
-        const p4 = ((row + 1) * 3) + (col + 1);
-
-        const f1 = calibPoints[p1].factor;
-        const f2 = calibPoints[p2].factor;
-        const f3 = calibPoints[p3].factor;
-        const f4 = calibPoints[p4].factor;
-
-        const factor = (1-u)*(1-v)*f1 + u*(1-v)*f2 + (1-u)*v*f3 + u*v*f4;
-        return raw * factor;
+        let u = (nx - x1) / (x2 - x1); let v = (ny - y1) / (y2 - y1);
+        u = Math.max(0, Math.min(1, u)); v = Math.max(0, Math.min(1, v));
+        const p1 = (row * 3) + col; const p2 = (row * 3) + (col + 1);
+        const p3 = ((row + 1) * 3) + col; const p4 = ((row + 1) * 3) + (col + 1);
+        const f1 = calibPoints[p1].factor; const f2 = calibPoints[p2].factor;
+        const f3 = calibPoints[p3].factor; const f4 = calibPoints[p4].factor;
+        return raw * ((1-u)*(1-v)*f1 + u*(1-v)*f2 + (1-u)*v*f3 + u*v*f4);
     }
 
-    // === 보정 위자드 UI ===
     function createGridVisuals() {
         const container = document.getElementById('grid-visual');
         container.innerHTML = '';
@@ -333,7 +382,6 @@
         const w = parseFloat(document.getElementById('wizard-weight').value);
         if(!w || w<=0) { alert("무게를 입력하세요"); return; }
         targetWeightGram = w;
-
         document.getElementById('calib-start').style.display = 'none';
         document.getElementById('calib-process').style.display = 'flex';
         updateWizardUI();
@@ -349,15 +397,20 @@
         if(currentStep < 9) document.getElementById(`gc-${currentStep}`).classList.add('target');
     }
 
-    function captureCurrentStep() {
-        // currentRawForce는 onCalibTouchMove에서 계속 업데이트 중임
+    function captureCurrentStep(isManual = false) {
         if (currentRawForce <= 0.02) {
-            alert("물체를 올리고 꾹 누른 상태에서 버튼을 눌러주세요!"); return;
+            if(isManual) alert("힘이 감지되지 않았습니다. 물체를 누르고 계신가요?");
+            return;
         }
         
+        // 데이터 저장
         calibPoints[currentStep].raw = currentRawForce;
         currentStep++;
         
+        // UI 깜빡임 피드백
+        document.body.style.backgroundColor = "#d3f9d8";
+        setTimeout(() => document.body.style.backgroundColor = "#f8f9fa", 100);
+
         if(currentStep < 9) {
             updateWizardUI();
         } else {
@@ -370,7 +423,7 @@
         calibPoints.forEach(p => p.factor = targetN / p.raw);
         isCalibrated = true;
         closeCalibration();
-        alert("3x3 보정 완료!");
+        alert("보정이 완료되었습니다! 이제 자유롭게 측정하세요.");
     }
 
     function closeCalibration() {
